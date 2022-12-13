@@ -2,14 +2,19 @@
 #include <cuda_runtime_api.h>
 #include <device_launch_parameters.h>
 #include <string>
+#include <vector>
+#include <iostream>
+#include <fstream>
 struct Result {
 	int* arr;
 	int size;
 };
-__global__ void find(char* t, char* p, size_t p_size, int* pos) {
+__global__ void find(char* t, char* p, size_t p_size, size_t* pos) {
 	int threadid = threadIdx.x;
 	bool match = true;
+	int count = 0;
 	for (int i = 0; i < p_size; i++) {
+		count = count+1;
 		if (t[threadid + i] != p[i]) {
 			match = false;
 			break;
@@ -23,49 +28,47 @@ __global__ void find(char* t, char* p, size_t p_size, int* pos) {
 	}
 }
 /*
-Creates a separate gpu thread per character in text, dont go over 1024
+Creates a separate gpu thread per character in text,
+do not make text larger than 1024 characters.
 */
-Result findSubStr(char *text, char *pattern) {
+std::vector<size_t> findSubStr(char *text, char *pattern) {
 	const size_t t_size = strlen(text);
 	const size_t p_size = strlen(pattern);
 	char* t;
 	char* p;
-	int* pos;
-	const size_t tc = t_size - p_size + 1;
+	size_t* pos;
+	const size_t tc = t_size - p_size+1;
+	// allocate memory unified memory for GPU and CPU
 	cudaMallocManaged((void**) &t, t_size*sizeof(char));
 	cudaMallocManaged((void**)&p, p_size * sizeof(char));
-	cudaMallocManaged((void**)&pos, tc*sizeof(int)); 
+	cudaMallocManaged((void**)&pos, tc*sizeof(size_t)); 
+	// copy params into pointers
 	strncpy(t, text, strlen(text));
 	strncpy(p, pattern, strlen(pattern));
-	find <<<1, tc>>> (t, p, p_size, pos);
-	cudaDeviceSynchronize();
-	int count = 0;
-	int* result;
+	find <<<1, tc>>> (t, p, p_size, pos); // run kernel
+
+	cudaDeviceSynchronize(); // wait for kernel to finish
+	std::vector<size_t> result;
 	for (int i = 0; i < tc; i++) {
 		if (pos[i] != 1024) {
-			if (count == 0) {
-				result = (int*)malloc(count * sizeof(int));
-			}
-			result[count] = pos[i];
-			count = count++;
+			result.push_back(pos[i]);
 		}
 	}
 	cudaFree(t);
 	cudaFree(p);
 	cudaFree(pos);
-	Result res = { result, count };
-	return res;
+	return result;
 }
 int main()
 {
 	char* text;
 	char* pattern;
-	text = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaworldaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaworld";
-	pattern = "world";
-	Result res = findSubStr(text, pattern); 
-	printf("result set size:%i\n",res.size);
-	for (int i = 0; i < res.size; i++) {
-		printf("found at position:%i\n",res.arr[i]);
+	text = "asfasfasfasfagjakgljeglajgelkejglaegjkalegjalekgjalekgjalekgjaelkgjalkegjlgljeglajgelkejglaegjkalegjalekgjalekgjalekgjaelkgjalkegjlaekgjlaekgdjalekgjaelkgljeglajgelkejglaegjkalegjalekgjalekgjalekgjaelkgjalkegjlaekgjlaekgdjalekgjaelkgjalkegjalekgjalgljeglajgelkejglaegjkalegjalekgjalekgjalekgjaelkgjalkegjlaekgjlaekgdjalekgjaelkgjalkegjalekgjalgljeglajgelkejglaegjkalegjalekgjalekgjalekgjaelkgjalkegjlaekgjlaekgdjalekgjaelkgjalkegjalekgjalgljeglajgelkejglaegjkalegjalekgjalekgjalekgjaelkgjalkegjlaekgjlaekgdjalekgjaelkgjalkegjalekgjalgljeglajgelkejglaegjkalegjalekgjalekgjalekgjaelkgjalkegjlaekgjlaekgdjalekgjaelkgjalkegjalekgjalgljeglajgelkejglaegjkalegjalekgjalekgjalekgjaelkgjalkegjlaekgjlaekgdjalekgjaelkgjalkegjalekgjalgjalkegjalekgjalgljeglajgelkejglaegjkalegjalekgjalekgjalekgjaelkgjalkegjlaekgjlaekgdjalekgjaelkgjalkegjalekgjalaekgjlaekgdjalekgjaelkgjalkegjalekgjalkegjaeglkjealgkjaeglkjaeglkjaeghariohqetåc,x.-zsögjlkeöh+3501<dglövc mxnc.testvc.xzm-wåpYURWIÅåwpyoijweÅOIEWJRLKXCVZ,N.N,CZVX.N, å";
+	pattern = "test";
+	std::vector<size_t> result = findSubStr(text, pattern);
+	printf("Matches found at indices: \n");
+	for (int i = 0; i < result.size(); i++) {
+		printf("%i ", result[i]);
 	}
 	return 0;
 }
